@@ -1,15 +1,15 @@
 // swift-tools-version:5.9
+import Foundation
 import PackageDescription
 
 // MARK: - Whisper.cpp Path Configuration (Bundled)
-// ⚠️ RELEASE 2 ONLY - Audio transcription dependencies
-// Uncomment these for Release 2 (January 1st) when audio features are re-enabled
 
 /// Use bundled whisper.cpp library from Vendors directory
 /// This makes the project self-contained - no external dependencies needed for building
-// let whisperPath = "Vendors/whisper"
-// let whisperIncludePath = whisperPath + "/include"
-// let whisperLibPath = whisperPath + "/lib"
+let packageDir = URL(fileURLWithPath: #filePath).deletingLastPathComponent().path
+let whisperPath = packageDir + "/Vendors/whisper"
+let whisperIncludePath = whisperPath + "/include"
+let whisperLibPath = whisperPath + "/lib"
 
 // MARK: - Package Definition
 
@@ -47,6 +47,12 @@ let package = Package(
         .package(url: "https://github.com/batmac/SwiftyChrono.git", revision: "e1bf3bde0f09112909157360b6bf39302f10ae5f")
     ],
     targets: [
+        // MARK: - Whisper.cpp C library (bundled)
+        .systemLibrary(
+            name: "CWhisper",
+            path: "Vendors/whisper"
+        ),
+
         // MARK: - Shared models and protocols
         .target(
             name: "Shared",
@@ -74,12 +80,18 @@ let package = Package(
         ),
         .testTarget(
             name: "DatabaseTests",
-            dependencies: ["Database", "Shared"],
+            dependencies: ["Database", "Shared", "Processing", "Storage", "Search"],
             path: "Database/Tests",
             exclude: [
                 "_future"  // Release 2+ tests
+            ],
+            linkerSettings: [
+                .unsafeFlags(["-L", whisperLibPath, "-Xlinker", "-rpath", "-Xlinker", "@executable_path/../lib", "-Xlinker", "-rpath", "-Xlinker", whisperLibPath]),
+                .linkedLibrary("whisper"),
+                .linkedFramework("Accelerate"),
+                .linkedFramework("CoreML"),
+                .linkedFramework("Metal")
             ]
-            // ⚠️ RELEASE 2 ONLY - Whisper linker settings removed for Release 1
         ),
 
         // MARK: - Storage module
@@ -98,7 +110,6 @@ let package = Package(
             name: "StorageTests",
             dependencies: ["Storage", "Shared"],
             path: "Storage/Tests"
-            // ⚠️ RELEASE 2 ONLY - Whisper linker settings removed for Release 1
         ),
 
         // MARK: - Capture module
@@ -117,8 +128,6 @@ let package = Package(
             name: "CaptureTests",
             dependencies: ["Capture", "Shared"],
             path: "Capture/Tests"
-            // ⚠️ RELEASE 2 ONLY - Whisper linker settings removed for Release 1
-            // ⚠️ RELEASE 2 ONLY - Audio/Tests excluded for Release 1
         ),
 
         // MARK: - Processing module
@@ -128,7 +137,8 @@ let package = Package(
                 "Shared",
                 "Database",
                 "Storage",
-                "Search"
+                "Search",
+                "CWhisper"
             ],
             path: "Processing",
             exclude: [
@@ -136,16 +146,29 @@ let package = Package(
                 "README.md",
                 "AGENTS.md",
                 "PROGRESS.md"
+            ],
+            cSettings: [
+                .unsafeFlags(["-I", whisperIncludePath, "-I", whisperIncludePath + "/ggml"])
+            ],
+            linkerSettings: [
+                .unsafeFlags(["-L", whisperLibPath, "-Xlinker", "-rpath", "-Xlinker", "@executable_path/../lib"]),
+                .linkedLibrary("whisper"),
+                .linkedFramework("Accelerate"),
+                .linkedFramework("CoreML"),
+                .linkedFramework("Metal")
             ]
-            // ⚠️ RELEASE 2 ONLY - Whisper cSettings and linkerSettings removed for Release 1
-            // Re-add Accelerate, CoreML, Metal frameworks when audio transcription is re-enabled
         ),
         .testTarget(
             name: "ProcessingTests",
             dependencies: ["Processing", "Shared", "Database", "Storage"],
-            path: "Processing/Tests"
-            // ⚠️ RELEASE 2 ONLY - Whisper cSettings and linkerSettings removed for Release 1
-            // ⚠️ RELEASE 2 ONLY - Audio/Tests excluded for Release 1
+            path: "Processing/Tests",
+            linkerSettings: [
+                .unsafeFlags(["-L", whisperLibPath, "-Xlinker", "-rpath", "-Xlinker", "@executable_path/../lib", "-Xlinker", "-rpath", "-Xlinker", whisperLibPath]),
+                .linkedLibrary("whisper"),
+                .linkedFramework("Accelerate"),
+                .linkedFramework("CoreML"),
+                .linkedFramework("Metal")
+            ]
         ),
 
         // MARK: - Search module
@@ -201,8 +224,14 @@ let package = Package(
             exclude: [
                 "Tests",
                 "README.md"
+            ],
+            linkerSettings: [
+                .unsafeFlags(["-L", whisperLibPath, "-Xlinker", "-rpath", "-Xlinker", "@executable_path/../lib"]),
+                .linkedLibrary("whisper"),
+                .linkedFramework("Accelerate"),
+                .linkedFramework("CoreML"),
+                .linkedFramework("Metal")
             ]
-            // ⚠️ RELEASE 2 ONLY - Whisper cSettings and linkerSettings removed for Release 1
         ),
         .testTarget(
             name: "AppTests",
@@ -211,8 +240,14 @@ let package = Package(
                 "Database",
                 "Shared"
             ],
-            path: "App/Tests"
-            // ⚠️ RELEASE 2 ONLY - Whisper cSettings and linkerSettings removed for Release 1
+            path: "App/Tests",
+            linkerSettings: [
+                .unsafeFlags(["-L", whisperLibPath, "-Xlinker", "-rpath", "-Xlinker", "@executable_path/../lib", "-Xlinker", "-rpath", "-Xlinker", whisperLibPath]),
+                .linkedLibrary("whisper"),
+                .linkedFramework("Accelerate"),
+                .linkedFramework("CoreML"),
+                .linkedFramework("Metal")
+            ]
         ),
 
         // MARK: - Crash recovery support
@@ -251,8 +286,14 @@ let package = Package(
             ],
             resources: [
                 .process("Assets.xcassets")
+            ],
+            linkerSettings: [
+                .unsafeFlags(["-L", whisperLibPath, "-Xlinker", "-rpath", "-Xlinker", "@executable_path/../lib"]),
+                .linkedLibrary("whisper"),
+                .linkedFramework("Accelerate"),
+                .linkedFramework("CoreML"),
+                .linkedFramework("Metal")
             ]
-            // ⚠️ RELEASE 2 ONLY - Whisper cSettings and linkerSettings removed for Release 1
         ),
         .executableTarget(
             name: "RetraceCrashRecoveryHelper",
@@ -285,8 +326,14 @@ let package = Package(
         .testTarget(
             name: "RetraceTests",
             dependencies: ["Retrace", "CrashRecoverySupport", "Shared", "App"],
-            path: "UI/Tests"
-            // ⚠️ RELEASE 2 ONLY - Whisper cSettings and linkerSettings removed for Release 1
+            path: "UI/Tests",
+            linkerSettings: [
+                .unsafeFlags(["-L", whisperLibPath, "-Xlinker", "-rpath", "-Xlinker", "@executable_path/../lib", "-Xlinker", "-rpath", "-Xlinker", whisperLibPath]),
+                .linkedLibrary("whisper"),
+                .linkedFramework("Accelerate"),
+                .linkedFramework("CoreML"),
+                .linkedFramework("Metal")
+            ]
         ),
     ]
 )

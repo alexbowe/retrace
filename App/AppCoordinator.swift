@@ -514,8 +514,7 @@ public actor AppCoordinator {
 
     private nonisolated let services: ServiceContainer
     private var captureTask: Task<Void, Never>?
-    // ⚠️ RELEASE 2 ONLY
-    // private var audioTask: Task<Void, Never>?
+    private var audioTask: Task<Void, Never>?
     private var isRunning = false
 
     // Statistics
@@ -1208,11 +1207,14 @@ public actor AppCoordinator {
         // Start permission monitoring to detect if user revokes permissions while recording
         await startPermissionMonitoring()
 
-        // ⚠️ RELEASE 2 ONLY - Audio capture commented out
-        // // Start audio capture
-        // let audioConfig = AudioCaptureConfig.default
-        // try await services.audioCapture.startCapture(config: audioConfig)
-        // Log.info("Audio capture started", category: .app)
+        // Start audio capture
+        do {
+            let audioConfig = AudioCaptureConfig.default
+            try await services.audioCapture.startCapture(config: audioConfig)
+            Log.info("Audio capture started", category: .app)
+        } catch {
+            Log.warning("Audio capture failed to start: \(error)", category: .app)
+        }
 
         // Start processing pipelines
         isRunning = true
@@ -1225,10 +1227,9 @@ public actor AppCoordinator {
         captureTask = Task {
             await runPipeline()
         }
-        // ⚠️ RELEASE 2 ONLY
-        // audioTask = Task {
-        //     await runAudioPipeline()
-        // }
+        audioTask = Task {
+            await runAudioPipeline()
+        }
 
         // Save recording state for persistence across restarts
         saveRecordingState(true)
@@ -1262,9 +1263,12 @@ public actor AppCoordinator {
         // Stop screen capture
         try await services.capture.stopCapture()
 
-        // ⚠️ RELEASE 2 ONLY
-        // // Stop audio capture
-        // try await services.audioCapture.stopCapture()
+        // Stop audio capture
+        do {
+            try await services.audioCapture.stopCapture()
+        } catch {
+            Log.warning("Audio capture stop failed: \(error)", category: .app)
+        }
 
         finalizePipelineStopped(persistState: persistState, clearCaptureTask: true)
 
@@ -1288,9 +1292,8 @@ public actor AppCoordinator {
         if clearCaptureTask {
             captureTask = nil
         }
-        // ⚠️ RELEASE 2 ONLY
-        // audioTask?.cancel()
-        // audioTask = nil
+        audioTask?.cancel()
+        audioTask = nil
         #if DEBUG
         debugInterruptEncodingOnNextAppend = false
         #endif
@@ -3118,18 +3121,17 @@ public actor AppCoordinator {
     }
 
     /// Audio pipeline: AudioCapture → AudioProcessing (whisper.cpp) → Database
-    // ⚠️ RELEASE 2 ONLY - Audio pipeline commented out
-    // private func runAudioPipeline() async {
-    //     Log.info("Audio pipeline processing started", category: .app)
-    //
-    //     // Get the audio stream from capture
-    //     let audioStream = await services.audioCapture.audioStream
-    //
-    //     // Start processing the stream (this will run until the stream ends)
-    //     await services.audioProcessing.startProcessing(audioStream: audioStream)
-    //
-    //     Log.info("Audio pipeline processing completed", category: .app)
-    // }
+    private func runAudioPipeline() async {
+        Log.info("Audio pipeline processing started", category: .app)
+
+        // Get the audio stream from capture
+        let audioStream = await services.audioCapture.audioStream
+
+        // Start processing the stream (this will run until the stream ends)
+        await services.audioProcessing.startProcessing(audioStream: audioStream)
+
+        Log.info("Audio pipeline processing completed", category: .app)
+    }
 
     // MARK: - Queue Monitoring
 

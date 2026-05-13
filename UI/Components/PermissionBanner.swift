@@ -74,26 +74,3 @@ struct SystemSettingsOpener {
         NSWorkspace.shared.open(url)
     }
 }
-
-// MARK: - Preview
-
-#Preview {
-    VStack(spacing: 16) {
-        PermissionBanner(
-            message: "Retrace needs Accessibility permission to detect which display you're working on.",
-            actionTitle: "Open Settings",
-            action: {},
-            onDismiss: {}
-        )
-        .padding()
-
-        PermissionBanner(
-            message: "Screen recording permission is required to capture your screen.",
-            actionTitle: "Grant Permission",
-            action: {},
-            onDismiss: {}
-        )
-        .padding()
-    }
-    .frame(width: 500)
-}
