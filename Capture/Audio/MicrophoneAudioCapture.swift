@@ -1,5 +1,6 @@
 import Foundation
 import AVFoundation
+import AudioToolbox
 import CoreAudio
 import Shared
 
@@ -131,6 +132,8 @@ public actor MicrophoneAudioCapture {
             }
         }
 
+        try selectPreferredInputDevice(on: inputNode)
+
         // Get input format
         let inputFormat = inputNode.outputFormat(forBus: 0)
 
@@ -208,6 +211,29 @@ public actor MicrophoneAudioCapture {
                 inputChannels: channelCount,
                 inputFormat: .float32
             )
+        }
+    }
+
+    private func selectPreferredInputDevice(on inputNode: AVAudioInputNode) throws {
+        guard let deviceUID = config.preferredMicrophoneDeviceUID else { return }
+        guard var deviceID = AudioInputDeviceProvider.deviceID(forUID: deviceUID) else {
+            throw AudioCaptureError.invalidConfiguration("Selected microphone is no longer available.")
+        }
+        guard let audioUnit = inputNode.audioUnit else {
+            throw AudioCaptureError.invalidConfiguration("Microphone audio unit is unavailable.")
+        }
+
+        let status = AudioUnitSetProperty(
+            audioUnit,
+            kAudioOutputUnitProperty_CurrentDevice,
+            kAudioUnitScope_Global,
+            0,
+            &deviceID,
+            UInt32(MemoryLayout<AudioDeviceID>.size)
+        )
+
+        guard status == noErr else {
+            throw AudioCaptureError.invalidConfiguration("Could not select microphone device.")
         }
     }
 }

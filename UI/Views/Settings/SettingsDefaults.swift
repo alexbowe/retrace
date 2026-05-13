@@ -73,6 +73,11 @@ enum SettingsDefaults {
     static let captureOnWindowChange = true
     static let captureOnMouseClick = false
     static let collectInPageURLsExperimental = false
+    static let audioMicrophoneEnabled = AudioCaptureSettings.defaultMicrophoneEnabled
+    static let audioMicrophoneDeviceUID = AudioCaptureSettings.defaultMicrophoneDeviceUID
+    static let audioSystemAudioEnabled = AudioCaptureSettings.defaultSystemAudioEnabled
+    static let audioSystemAudioExcludedApps = AudioCaptureSettings.defaultSystemAudioExcludedAppsRaw
+    static let audioMeetingRecordingConsent = AudioCaptureSettings.defaultMeetingRecordingConsent
 
     static let retentionDays: Int = 0
     static let maxStorageGB: Double = 50.0

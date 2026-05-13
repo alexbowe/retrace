@@ -62,6 +62,7 @@ extension SettingsView {
     var captureSettings: some View {
         VStack(alignment: .leading, spacing: 20) {
             captureRateCard
+            audioCaptureCard
             menuBarIconCard
             compressionCard
             Color.clear

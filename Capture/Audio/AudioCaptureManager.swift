@@ -15,6 +15,7 @@ public actor AudioCaptureManager: AudioCaptureProtocol {
     // State
     private var config: AudioCaptureConfig
     public private(set) var isCapturing: Bool = false
+    private var activeSources: Set<ActiveAudioSource> = []
     private var currentMeetingState: MeetingState = .notInMeeting
 
     // Statistics
@@ -54,6 +55,9 @@ public actor AudioCaptureManager: AudioCaptureProtocol {
         guard !isCapturing else { return }
 
         self.config = config
+        activeSources.removeAll()
+        try await microphoneCapture.updateConfig(config)
+        try await systemAudioCapture.updateConfig(config)
 
         // Create combined audio stream
         let (stream, continuation) = AsyncStream<CapturedAudio>.makeStream()
@@ -68,28 +72,52 @@ public actor AudioCaptureManager: AudioCaptureProtocol {
             }
         }
 
+        var startupErrors: [Error] = []
+
         // Start microphone capture if enabled
         if config.microphoneEnabled {
-            try await microphoneCapture.startCapture()
-            Task {
-                await streamMicrophoneAudio()
+            do {
+                try await microphoneCapture.startCapture()
+                activeSources.insert(.microphone)
+                Log.info("[AudioCaptureManager] Microphone capture started")
+                Task {
+                    await streamMicrophoneAudio()
+                }
+            } catch {
+                startupErrors.append(error)
+                Log.warning("[AudioCaptureManager] Microphone capture failed to start: \(error)")
             }
         }
 
         // Start system audio capture if enabled
         if config.systemAudioEnabled {
-            try await systemAudioCapture.startCapture()
+            do {
+                try await systemAudioCapture.startCapture()
+                activeSources.insert(.systemAudio)
+                Log.info("[AudioCaptureManager] System audio capture started")
 
-            // Apply initial mute state based on current meeting state
-            let currentState = await meetingDetector.getCurrentState()
-            await updateSystemAudioMuteState(meetingState: currentState)
+                // Apply initial mute state based on current meeting state
+                let currentState = await meetingDetector.getCurrentState()
+                await updateSystemAudioMuteState(meetingState: currentState)
 
-            Task {
-                await streamSystemAudio()
+                Task {
+                    await streamSystemAudio()
+                }
+            } catch {
+                startupErrors.append(error)
+                Log.warning("[AudioCaptureManager] System audio capture failed to start: \(error)")
             }
         }
 
+        guard !activeSources.isEmpty else {
+            await cleanupFailedStartup()
+            throw startupErrors.first ?? AudioCaptureError.invalidConfiguration("No audio capture sources are enabled.")
+        }
+
         isCapturing = true
+        if !startupErrors.isEmpty {
+            Log.warning("[AudioCaptureManager] Audio capture started with one or more disabled sources")
+        }
         statistics = AudioCaptureStatistics(
             microphoneSamplesRecorded: 0,
             systemAudioSamplesRecorded: 0,
@@ -103,15 +131,17 @@ public actor AudioCaptureManager: AudioCaptureProtocol {
     }
 
     public func stopCapture() async throws {
-        guard isCapturing else { return }
+        guard isCapturing || !activeSources.isEmpty else { return }
 
         await microphoneCapture.stopCapture()
         try await systemAudioCapture.stopCapture()
         await meetingDetector.stopMonitoring()
 
         isCapturing = false
+        activeSources.removeAll()
         audioContinuation?.finish()
         audioContinuation = nil
+        _audioStream = nil
     }
 
     public var audioStream: AsyncStream<CapturedAudio> {
@@ -133,6 +163,8 @@ public actor AudioCaptureManager: AudioCaptureProtocol {
         }
 
         self.config = config
+        try await microphoneCapture.updateConfig(config)
+        try await systemAudioCapture.updateConfig(config)
 
         if wasCapturing {
             try await startCapture(config: config)
@@ -199,6 +231,17 @@ public actor AudioCaptureManager: AudioCaptureProtocol {
                 autoMuteCount: statistics.autoMuteCount
             )
         }
+    }
+
+    private func cleanupFailedStartup() async {
+        await microphoneCapture.stopCapture()
+        try? await systemAudioCapture.stopCapture()
+        await meetingDetector.stopMonitoring()
+        isCapturing = false
+        activeSources.removeAll()
+        audioContinuation?.finish()
+        audioContinuation = nil
+        _audioStream = nil
     }
 
     // MARK: - Privacy-Aware Muting Logic
@@ -280,4 +323,9 @@ extension AudioCaptureManager {
     public func checkMeetingStatus() async -> MeetingState {
         return await meetingDetector.getCurrentState()
     }
+}
+
+private enum ActiveAudioSource: Hashable, Sendable {
+    case microphone
+    case systemAudio
 }

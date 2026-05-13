@@ -342,8 +342,14 @@ public struct AudioCaptureConfig: Codable, Sendable {
     /// Enable microphone capture (Pipeline A)
     public let microphoneEnabled: Bool
 
+    /// Preferred CoreAudio input device UID for microphone capture. Nil uses the system default input.
+    public let preferredMicrophoneDeviceUID: String?
+
     /// Enable system audio capture (Pipeline B)
     public let systemAudioEnabled: Bool
+
+    /// App bundle IDs whose system audio should be excluded from ScreenCaptureKit capture.
+    public let excludedSystemAudioAppBundleIDs: Set<String>
 
     /// Enable Voice Processing (Voice Isolation) for microphone
     /// This is non-negotiable as per privacy policy - must always be true
@@ -367,7 +373,9 @@ public struct AudioCaptureConfig: Codable, Sendable {
 
     public init(
         microphoneEnabled: Bool = true,
+        preferredMicrophoneDeviceUID: String? = nil,
         systemAudioEnabled: Bool = false,
+        excludedSystemAudioAppBundleIDs: Set<String> = [],
         voiceProcessingEnabled: Bool = true,  // Must always be true
         hasConsentedToMeetingRecording: Bool = false,
         bufferDurationSeconds: Double = 10.0,
@@ -376,7 +384,9 @@ public struct AudioCaptureConfig: Codable, Sendable {
         meetingAppBundleIDs: Set<String> = AudioCaptureConfig.defaultMeetingApps
     ) {
         self.microphoneEnabled = microphoneEnabled
+        self.preferredMicrophoneDeviceUID = preferredMicrophoneDeviceUID
         self.systemAudioEnabled = systemAudioEnabled
+        self.excludedSystemAudioAppBundleIDs = excludedSystemAudioAppBundleIDs
         self.voiceProcessingEnabled = voiceProcessingEnabled
         self.hasConsentedToMeetingRecording = hasConsentedToMeetingRecording
         self.bufferDurationSeconds = bufferDurationSeconds
@@ -386,6 +396,10 @@ public struct AudioCaptureConfig: Codable, Sendable {
     }
 
     public static let `default` = AudioCaptureConfig()
+
+    public var hasEnabledSources: Bool {
+        microphoneEnabled || systemAudioEnabled
+    }
 
     /// Default meeting app bundle IDs to monitor
     public static let defaultMeetingApps: Set<String> = [
@@ -400,6 +414,64 @@ public struct AudioCaptureConfig: Codable, Sendable {
         "us.zoom.ringcentral",            // RingCentral
         "com.cisco.webexteams",           // Webex Teams
     ]
+}
+
+public enum AudioCaptureSettings {
+    public static let defaultsSuiteName = "io.retrace.app"
+
+    public static let microphoneEnabledKey = "audioMicrophoneEnabled"
+    public static let microphoneDeviceUIDKey = "audioMicrophoneDeviceUID"
+    public static let systemAudioEnabledKey = "audioSystemAudioEnabled"
+    public static let systemAudioExcludedAppsKey = "audioSystemAudioExcludedApps"
+    public static let meetingRecordingConsentKey = "audioMeetingRecordingConsent"
+
+    public static let defaultMicrophoneEnabled = true
+    public static let defaultMicrophoneDeviceUID = ""
+    public static let defaultSystemAudioEnabled = false
+    public static let defaultSystemAudioExcludedAppsRaw = "[]"
+    public static let defaultMeetingRecordingConsent = false
+
+    public static func config(from defaults: UserDefaults? = nil) -> AudioCaptureConfig {
+        let defaults = defaults ?? UserDefaults(suiteName: defaultsSuiteName) ?? .standard
+        let microphoneEnabled = defaults.object(forKey: microphoneEnabledKey) as? Bool
+            ?? defaultMicrophoneEnabled
+        let microphoneDeviceUID = defaults.string(forKey: microphoneDeviceUIDKey)
+            ?? defaultMicrophoneDeviceUID
+        let systemAudioEnabled = defaults.object(forKey: systemAudioEnabledKey) as? Bool
+            ?? defaultSystemAudioEnabled
+        let excludedSystemAudioApps = excludedSystemAudioAppBundleIDs(from: defaults)
+        let meetingRecordingConsent = defaults.object(forKey: meetingRecordingConsentKey) as? Bool
+            ?? defaultMeetingRecordingConsent
+
+        return AudioCaptureConfig(
+            microphoneEnabled: microphoneEnabled,
+            preferredMicrophoneDeviceUID: microphoneDeviceUID.isEmpty ? nil : microphoneDeviceUID,
+            systemAudioEnabled: systemAudioEnabled,
+            excludedSystemAudioAppBundleIDs: excludedSystemAudioApps,
+            hasConsentedToMeetingRecording: meetingRecordingConsent
+        )
+    }
+
+    private struct StoredExcludedApp: Decodable {
+        let bundleID: String
+    }
+
+    private static func excludedSystemAudioAppBundleIDs(from defaults: UserDefaults) -> Set<String> {
+        let raw = defaults.string(forKey: systemAudioExcludedAppsKey) ?? defaultSystemAudioExcludedAppsRaw
+        guard !raw.isEmpty, let data = raw.data(using: .utf8) else {
+            return []
+        }
+
+        if let apps = try? JSONDecoder().decode([StoredExcludedApp].self, from: data) {
+            return Set(apps.map(\.bundleID))
+        }
+
+        return Set(
+            raw.split(whereSeparator: { $0 == "," || $0 == "\n" })
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .filter { !$0.isEmpty }
+        )
+    }
 }
 
 // MARK: - Search Configuration

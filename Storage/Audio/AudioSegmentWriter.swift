@@ -39,15 +39,21 @@ public actor AudioSegmentWriter {
             throw StorageError.fileWriteFailed(path: "audio segment", underlying: "Invalid time range: \(startTime)-\(endTime)")
         }
 
-        // Calculate byte offsets for the sentence
+        // Calculate byte offsets for the sentence. Whisper timestamps can run past
+        // the buffered PCM duration, so clamp the end to the available audio.
         let bytesPerSample = 2  // Int16 PCM
+        let frameByteCount = bytesPerSample * channels
+        guard sampleRate > 0 && channels > 0 else {
+            throw StorageError.fileWriteFailed(path: "audio segment", underlying: "Invalid audio format: \(sampleRate) Hz, \(channels) channels")
+        }
+        let availableSamples = audioData.count / frameByteCount
         let startSample = Int(startTime * Double(sampleRate))
-        let endSample = Int(endTime * Double(sampleRate))
-        let startByte = startSample * bytesPerSample * channels
-        let endByte = endSample * bytesPerSample * channels
+        let endSample = min(Int(endTime * Double(sampleRate)), availableSamples)
+        let startByte = startSample * frameByteCount
+        let endByte = endSample * frameByteCount
 
         // Extract sentence audio data
-        guard startByte >= 0 && endByte <= audioData.count && startByte < endByte else {
+        guard startSample >= 0 && startSample < availableSamples && startByte < endByte else {
             throw StorageError.fileWriteFailed(path: "audio segment", underlying: "Invalid byte range: \(startByte)-\(endByte) for buffer size \(audioData.count)")
         }
         let sentenceData = audioData.subdata(in: startByte..<endByte)

@@ -657,6 +657,34 @@ public actor AppCoordinator {
         try await services.capture.updateConfig(transform)
     }
 
+    public func updateAudioCaptureConfig(_ config: AudioCaptureConfig) async throws {
+        guard isRunning else {
+            try await services.audioCapture.updateConfig(config)
+            return
+        }
+
+        let previousAudioTask = audioTask
+        audioTask = nil
+
+        if await services.audioCapture.isCapturing {
+            try await services.audioCapture.stopCapture()
+            await previousAudioTask?.value
+        } else {
+            previousAudioTask?.cancel()
+        }
+
+        guard config.hasEnabledSources else {
+            Log.info("[AppCoordinator] Audio capture disabled by settings", category: .app)
+            return
+        }
+
+        try await services.audioCapture.startCapture(config: config)
+        audioTask = Task {
+            await runAudioPipeline()
+        }
+        Log.info("[AppCoordinator] Audio capture settings applied", category: .app)
+    }
+
     public func updateVideoQuality(
         _ quality: Double,
         source: String = "settings_capture_card"
@@ -1216,13 +1244,20 @@ public actor AppCoordinator {
         // Start permission monitoring to detect if user revokes permissions while recording
         await startPermissionMonitoring()
 
-        // Start audio capture
-        do {
-            let audioConfig = AudioCaptureConfig.default
-            try await services.audioCapture.startCapture(config: audioConfig)
-            Log.info("Audio capture started", category: .app)
-        } catch {
-            Log.warning("Audio capture failed to start: \(error)", category: .app)
+        let audioConfig = AudioCaptureSettings.config()
+        let audioCaptureStarted: Bool
+        if audioConfig.hasEnabledSources {
+            do {
+                try await services.audioCapture.startCapture(config: audioConfig)
+                audioCaptureStarted = true
+                Log.info("Audio capture started", category: .app)
+            } catch {
+                audioCaptureStarted = false
+                Log.warning("Audio capture failed to start: \(error)", category: .app)
+            }
+        } else {
+            audioCaptureStarted = false
+            Log.info("Audio capture disabled by settings", category: .app)
         }
 
         // Start processing pipelines
@@ -1236,8 +1271,10 @@ public actor AppCoordinator {
         captureTask = Task {
             await runPipeline()
         }
-        audioTask = Task {
-            await runAudioPipeline()
+        if audioCaptureStarted {
+            audioTask = Task {
+                await runAudioPipeline()
+            }
         }
 
         // Backfill: transcribe any saved batch audio files from previous sessions

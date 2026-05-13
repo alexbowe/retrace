@@ -40,64 +40,80 @@ public actor SystemAudioCapture: NSObject {
         self._audioStream = stream
         self.audioContinuation = continuation
 
-        // Get shareable content
-        let availableContent = try await SCShareableContent.excludingDesktopWindows(
-            false,
-            onScreenWindowsOnly: false
-        )
+        do {
+            // Get shareable content
+            let availableContent = try await SCShareableContent.excludingDesktopWindows(
+                false,
+                onScreenWindowsOnly: false
+            )
 
-        guard let display = availableContent.displays.first else {
-            throw AudioCaptureError.systemAudioNotAvailable
-        }
-
-        // Create filter (we don't need video, only audio)
-        let filter = SCContentFilter(
-            display: display,
-            excludingApplications: [],
-            exceptingWindows: []
-        )
-
-        // Configure stream for audio-only
-        let streamConfig = SCStreamConfiguration()
-        streamConfig.capturesAudio = true
-        streamConfig.sampleRate = 48000  // System default, we'll convert to 16kHz
-        streamConfig.channelCount = 2    // Stereo system audio, we'll convert to mono
-
-        // We don't need video for audio-only capture
-        streamConfig.width = 1
-        streamConfig.height = 1
-        streamConfig.minimumFrameInterval = CMTime(value: 1, timescale: 1)
-
-        // Create stream output handler
-        let output = SystemAudioStreamOutput(
-            continuation: audioContinuation!,
-            formatConverter: formatConverter,
-            isMutedCallback: { [weak self] in
-                await self?.isMuted ?? false
+            guard let display = availableContent.displays.first else {
+                throw AudioCaptureError.systemAudioNotAvailable
             }
-        )
-        self.streamOutput = output
 
-        // Create and configure stream
-        let scStream = SCStream(filter: filter, configuration: streamConfig, delegate: nil)
+            let excludedApplications = availableContent.applications.filter { application in
+                config.excludedSystemAudioAppBundleIDs.contains(application.bundleIdentifier)
+            }
 
-        // Add audio output handler
-        try scStream.addStreamOutput(
-            output,
-            type: .audio,
-            sampleHandlerQueue: .global(qos: .userInitiated)
-        )
+            if !excludedApplications.isEmpty {
+                Log.info(
+                    "[SystemAudioCapture] Excluding \(excludedApplications.count) app(s) from system audio capture",
+                    category: .capture
+                )
+            }
 
-        // Start capture
-        try await scStream.startCapture()
+            // Create filter (we don't need video output, only audio)
+            let filter = SCContentFilter(
+                display: display,
+                excludingApplications: excludedApplications,
+                exceptingWindows: []
+            )
 
-        self.stream = scStream
-        self.isRunning = true
+            // Configure stream for audio-only output. ScreenCaptureKit still wants
+            // valid display dimensions even when we only attach an audio output.
+            let streamConfig = SCStreamConfiguration()
+            streamConfig.capturesAudio = true
+            streamConfig.excludesCurrentProcessAudio = true
+            streamConfig.sampleRate = 48000  // System default, we'll convert to 16kHz
+            streamConfig.channelCount = 2    // Stereo system audio, we'll convert to mono
+            streamConfig.width = display.width
+            streamConfig.height = display.height
+            streamConfig.minimumFrameInterval = CMTime(value: 1, timescale: 1)
+
+            // Create stream output handler
+            let output = SystemAudioStreamOutput(
+                continuation: continuation,
+                formatConverter: formatConverter,
+                isMutedCallback: { [weak self] in
+                    await self?.isMuted ?? false
+                }
+            )
+            self.streamOutput = output
+
+            // Create and configure stream
+            let scStream = SCStream(filter: filter, configuration: streamConfig, delegate: nil)
+
+            // Add audio output handler
+            try scStream.addStreamOutput(
+                output,
+                type: .audio,
+                sampleHandlerQueue: .global(qos: .userInitiated)
+            )
+
+            // Start capture
+            try await scStream.startCapture()
+
+            self.stream = scStream
+            self.isRunning = true
+        } catch {
+            cleanupFailedStart()
+            throw error
+        }
     }
 
     /// Stop capturing
     public func stopCapture() async throws {
-        guard isRunning else { return }
+        guard isRunning || stream != nil || streamOutput != nil || audioContinuation != nil else { return }
 
         if let stream = stream {
             try await stream.stopCapture()
@@ -109,6 +125,7 @@ public actor SystemAudioCapture: NSObject {
 
         audioContinuation?.finish()
         audioContinuation = nil
+        _audioStream = nil
     }
 
     /// Get audio stream
@@ -152,6 +169,15 @@ public actor SystemAudioCapture: NSObject {
         if wasRunning {
             try await startCapture()
         }
+    }
+
+    private func cleanupFailedStart() {
+        stream = nil
+        streamOutput = nil
+        isRunning = false
+        audioContinuation?.finish()
+        audioContinuation = nil
+        _audioStream = nil
     }
 }
 
@@ -272,4 +298,3 @@ private class SystemAudioStreamOutput: NSObject, SCStreamOutput {
         }
     }
 }
-

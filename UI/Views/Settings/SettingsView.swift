@@ -1,5 +1,6 @@
 import SwiftUI
 import Shared
+import Capture
 import AppKit
 import App
 import Database
@@ -97,12 +98,25 @@ public struct SettingsView: View {
     @AppStorage("captureOnWindowChange", store: settingsStore) var captureOnWindowChange: Bool = SettingsDefaults.captureOnWindowChange
     @AppStorage("captureOnMouseClick", store: settingsStore) var captureOnMouseClick: Bool = SettingsDefaults.captureOnMouseClick
     @AppStorage("collectInPageURLsExperimental", store: settingsStore) var collectInPageURLsExperimental: Bool = SettingsDefaults.collectInPageURLsExperimental
+    @AppStorage(AudioCaptureSettings.microphoneEnabledKey, store: settingsStore) var audioMicrophoneEnabled = SettingsDefaults.audioMicrophoneEnabled
+    @AppStorage(AudioCaptureSettings.microphoneDeviceUIDKey, store: settingsStore) var audioMicrophoneDeviceUID = SettingsDefaults.audioMicrophoneDeviceUID
+    @AppStorage(AudioCaptureSettings.systemAudioEnabledKey, store: settingsStore) var audioSystemAudioEnabled = SettingsDefaults.audioSystemAudioEnabled
+    @AppStorage(AudioCaptureSettings.systemAudioExcludedAppsKey, store: settingsStore) var audioSystemAudioExcludedAppsRaw = SettingsDefaults.audioSystemAudioExcludedApps
+    @AppStorage(AudioCaptureSettings.meetingRecordingConsentKey, store: settingsStore) var audioMeetingRecordingConsent = SettingsDefaults.audioMeetingRecordingConsent
     @AppStorage("inPageURLPermissionCache", store: settingsStore) var inPageURLPermissionCacheRaw = ""
     @State var lastNonZeroCaptureIntervalSeconds = SettingsDefaults.captureIntervalSeconds
     @State var isProgrammaticCaptureIntervalChange = false
     @State var isProgrammaticWindowChangeCaptureToggleChange = false
     @State var lastObservedStorageEstimateRange: StorageEstimateRange?
     @State var storageEstimateDeltaDirection: StorageEstimateDeltaDirection?
+    @State var whisperModelStatus: ModelManager.ModelStatus?
+    @State var isRefreshingWhisperModelStatus = false
+    @State var isDownloadingWhisperModel = false
+    @State var whisperModelError: String?
+    @State var availableAudioInputDevices: [AudioInputDevice] = []
+    @State var audioExcludedAppsPopoverShown = false
+    @State var installedAppsForAudioFilter: [(bundleID: String, name: String)] = []
+    @State var otherAppsForAudioFilter: [(bundleID: String, name: String)] = []
 
     // MARK: Storage Settings
     @AppStorage("retentionDays", store: settingsStore) var retentionDays: Int = SettingsDefaults.retentionDays
