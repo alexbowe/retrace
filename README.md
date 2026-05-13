@@ -24,13 +24,26 @@ Retrace is an open source alternative to Rewind AI that gives you photographic m
 - **HEVC video encoding** - Working but not yet optimized for efficiency
 - **Search highlighting** - Visual highlighting of search results in frames
 - **Privacy controls** - Exclude apps and private browsing windows
+- **Experimental audio recording and transcription** - Local microphone/system audio capture, whisper.cpp transcription, transcript storage, and transcript UI
 
 ### 🚧 Coming Soon
 
 - **Optimized storage** - Improving HEVC compression efficiency
-- **Audio recording and transcription** - Whisper.cpp integration ready but disabled
+- **Audio filtering controls** - App-level system audio exclusions and better meeting/privacy controls
+- **Silence/VAD gating** - Skip transcription and storage for non-speech audio
 - **Advanced keyboard shortcuts** - More customizable shortcuts
 - **Decrypt and backup Rewind database** - Export your Rewind data
+
+## Audio Fork Notes
+
+This branch adds experimental audio support by cherry-picking and adapting audio work from [stuit (`stuartsc`)'s `stuartsc/retrace` fork](https://github.com/stuartsc/retrace). The audio path is local-first: audio is captured on-device, transcribed with bundled whisper.cpp libraries, stored in SQLite, and exposed through a transcript window.
+
+Current audio caveats:
+
+- Microphone capture is enabled by default in the audio pipeline; system audio remains off by default in `AudioCaptureConfig`.
+- System audio capture uses ScreenCaptureKit, but app-level audio filtering is not wired yet.
+- Whisper model availability controls whether real transcription runs; without the model, audio can be recorded with mock/no transcription behavior.
+- Runtime capture still depends on macOS Screen Recording and Microphone permissions.
 
 ## Architecture
 
@@ -44,6 +57,7 @@ Frame Deduplication
 Split into two paths:
     ├─ OCR Path: Vision OCR → Text Extraction → SQLite Database
     └─ Video Path: HEVC Encoding → .mp4 segments
+AudioCapture (mic/system) → AudioProcessing → whisper.cpp → SQLite audio_captures + FTS5
     ↓
 Full-Text Search (FTS5) → Timeline/Dashboard UI
 ```
@@ -73,10 +87,10 @@ See [AGENTS.md](AGENTS.md) for detailed architecture documentation.
 - **Video**: VideoToolbox (HEVC encoding)
 - **Database**: SQLite with FTS5 full-text search
 - **Encryption**: CryptoKit (AES-256-GCM) for database
+- **Audio**: AVAudioEngine, ScreenCaptureKit, whisper.cpp
 
 ### Planned for Future Releases
 
-- **Audio transcription**: whisper.cpp (bundled, ready but disabled)
 - **Embeddings**: llama.cpp for semantic search (prepared but not active)
 
 ## Requirements
@@ -91,6 +105,7 @@ Retrace needs the following macOS permissions:
 
 - **Screen Recording** - To capture your screen
 - **Accessibility** - For enhanced context extraction (app names, window titles, browser URLs)
+- **Microphone** - For audio transcription in this experimental audio branch
 
 ## Quick Start
 
@@ -210,10 +225,15 @@ retrace/
 - [x] Rewind AI import (resumable)
 - [x] Menu bar and global hotkeys
 - [x] Search highlighting
+- [x] Experimental audio capture/transcription branch
 
 ### Future Releases - TBD
 
-_Roadmap for future releases to be determined based on user feedback and priorities._
+- [ ] App-level system audio filtering, e.g. exclude Spotify
+- [ ] Silence/VAD gating before Whisper transcription
+- [ ] Smarter screenshot/audio retention and thinning
+- [ ] Codex/MCP read-only query server for OCR and transcripts
+- [ ] Embeddings/semantic search
 
 ## Performance
 
@@ -232,7 +252,7 @@ _Roadmap for future releases to be determined based on user feedback and priorit
 
 - **macOS 13.0+ and Apple Silicon only** - Intel Macs not supported
 - **Storage not yet efficient** - Currently 4-5x less efficient than Rewind AI (~50-70GB/month vs ~15GB/month). HEVC encoding is working but not optimized
-- **No audio capture** - Audio recording and transcription infrastructure exists but is currently disabled
+- **Audio is experimental** - App-level system audio filtering, silence/VAD gating, and end-to-end runtime validation are still needed
 
 See [GitHub Issues](https://github.com/haseab/retrace/issues) for known bugs and feature requests.
 
@@ -249,10 +269,10 @@ Retrace uses minimal external dependencies:
 
 - **[swift-sqlcipher](https://github.com/skiptools/swift-sqlcipher)** - SQLite with encryption for Rewind database import
 - **[Sparkle](https://github.com/sparkle-project/Sparkle)** - Auto-update framework
+- **[whisper.cpp](https://github.com/ggerganov/whisper.cpp)** - Local audio transcription
 - **Apple Frameworks**: CoreGraphics, Vision, AppKit, SwiftUI, VideoToolbox, CryptoKit
 
 Future releases will add:
-- **whisper.cpp** (bundled in Vendors/) - Local audio transcription
 - **llama.cpp** (bundled in Vendors/) - Local embeddings for semantic search
 
 ## Contributing
@@ -274,6 +294,8 @@ Created with ♥ by [@haseab](https://github.com/haseab)
 
 - GitHub: [haseab/retrace](https://github.com/haseab/retrace)
 - Twitter/X: [@haseab\_](https://x.com/haseab_)
+
+Experimental audio support in this branch was cherry-picked and adapted from [stuit (`stuartsc`)'s `stuartsc/retrace` fork](https://github.com/stuartsc/retrace).
 
 ## Acknowledgments
 
